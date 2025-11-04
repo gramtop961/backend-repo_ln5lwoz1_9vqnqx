@@ -1,48 +1,44 @@
-"""
-Database Schemas
+from pydantic import BaseModel, Field, EmailStr
+from typing import Optional, List, Literal
+from datetime import datetime
 
-Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
+# NOTE: Each class name is the collection name lowercased
 
-Each Pydantic model represents a collection in your database.
-Model name is converted to lowercase for the collection name:
-- User -> "user" collection
-- Product -> "product" collection
-- BlogPost -> "blogs" collection
-"""
+class Admin(BaseModel):
+    email: EmailStr
+    password_hash: str
+    salt: str
+    sessions: Optional[List[dict]] = []  # {token, expires_at}
 
-from pydantic import BaseModel, Field
-from typing import Optional
+class Settings(BaseModel):
+    school_name: str = Field(default="Autoscuola Missori")
+    instructor_emails: List[EmailStr] = []
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
 
-# Example schemas (replace with your own):
+class Student(BaseModel):
+    name: str
+    email: EmailStr
+    password_hash: str
+    salt: str
+    is_active: bool = True
 
-class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+class SlotOverride(BaseModel):
+    # Admin can add/remove extra slots or disable/enable specific ones
+    date: str  # YYYY-MM-DD
+    start: str # HH:MM
+    end: str   # HH:MM
+    enabled: bool = True
 
-class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
-
-# Add your own schemas here:
-# --------------------------------------------------
-
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class Booking(BaseModel):
+    date: str  # YYYY-MM-DD
+    start: str # HH:MM
+    end: str   # HH:MM
+    student_id: str
+    status: Literal["active","cancelled"] = "active"
+    created_by: Literal["student","admin"] = "student"
+    created_at: Optional[datetime] = None
+    notes: Optional[str] = None
