@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict
 from datetime import datetime
 
 # NOTE: Each class name is the collection name lowercased
@@ -18,6 +18,12 @@ class Settings(BaseModel):
     smtp_user: Optional[str] = None
     smtp_password: Optional[str] = None
     smtp_use_tls: bool = True
+    # Guide labels allow renaming A/B/C, defaults in Italian
+    guide_labels: Dict[str, str] = Field(default_factory=lambda: {
+        "A": "Notturna",
+        "B": "Extraurbana",
+        "C": "Autostrada",
+    })
 
 class Student(BaseModel):
     name: str
@@ -42,3 +48,4 @@ class Booking(BaseModel):
     created_by: Literal["student","admin"] = "student"
     created_at: Optional[datetime] = None
     notes: Optional[str] = None
+    guide_type: Literal["standard", "A", "B", "C"] = "standard"

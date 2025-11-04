@@ -36,6 +36,9 @@ WEEK_SLOTS = [
 
 DISABLED_WEDNESDAY = {("12:30","13:30"), ("15:00","16:00")}
 
+DEFAULT_ADMIN_EMAIL = "autoscuolamissori@gmail.com"
+DEFAULT_ADMIN_PASSWORD = "Buck2025@"
+
 def sha256_hash(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode()).hexdigest()
 
@@ -68,11 +71,11 @@ async def get_settings() -> dict:
 @app.on_event("startup")
 async def ensure_admin():
     try:
-        existing = db["admin"].find_one({"email": "autoscuolamissori@gmail.com"})
+        existing = db["admin"].find_one({"email": DEFAULT_ADMIN_EMAIL})
         if not existing:
             salt = secrets.token_hex(8)
-            pw_hash = sha256_hash("Buck2025@", salt)
-            admin = Admin(email="autoscuolamissori@gmail.com", password_hash=pw_hash, salt=salt, sessions=[])
+            pw_hash = sha256_hash(DEFAULT_ADMIN_PASSWORD, salt)
+            admin = Admin(email=DEFAULT_ADMIN_EMAIL, password_hash=pw_hash, salt=salt, sessions=[])
             try:
                 create_document("admin", admin)
             except Exception:
@@ -103,6 +106,7 @@ class SettingsUpdate(BaseModel):
     smtp_user: Optional[str] = None
     smtp_password: Optional[str] = None
     smtp_use_tls: Optional[bool] = None
+    guide_labels: Optional[Dict[str, str]] = None
 
 class BookingRequest(BaseModel):
     date: str
@@ -110,6 +114,7 @@ class BookingRequest(BaseModel):
     end: str
     student_id: Optional[str] = None  # admin can book for a student
     notes: Optional[str] = None
+    guide_type: Optional[str] = "standard"
 
 # ----------------- Auth dependencies ------------------
 
@@ -169,7 +174,15 @@ def send_email(to_email: str, subject: str, html_body: str):
 def login_admin(payload: LoginRequest):
     admin = db["admin"].find_one({"email": payload.email})
     if not admin:
-        raise HTTPException(status_code=401, detail="Credenziali non valide")
+        # Bootstrap: if default admin credentials are used and admin doesn't exist, create it
+        if payload.email == DEFAULT_ADMIN_EMAIL and payload.password == DEFAULT_ADMIN_PASSWORD:
+            salt = secrets.token_hex(8)
+            pw_hash = sha256_hash(DEFAULT_ADMIN_PASSWORD, salt)
+            admin_doc = Admin(email=DEFAULT_ADMIN_EMAIL, password_hash=pw_hash, salt=salt, sessions=[])
+            create_document("admin", admin_doc)
+            admin = db["admin"].find_one({"email": payload.email})
+        else:
+            raise HTTPException(status_code=401, detail="Credenziali non valide")
     if admin["password_hash"] != sha256_hash(payload.password, admin["salt"]):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     token = issue_session("admin", {"email": payload.email})
@@ -291,6 +304,7 @@ def get_calendar(weekStart: str, x_token: Optional[str] = Header(None)):
                 info = {
                     "booking_id": str(book["_id"]),
                     "student_id": book.get("student_id"),
+                    "guide_type": book.get("guide_type", "standard"),
                 }
                 if is_admin:
                     info["student_name"] = db["student"].find_one({"_id": __import__('bson').ObjectId(book["student_id"])})["name"] if book.get("student_id") else ""
@@ -375,10 +389,13 @@ def create_booking(req: BookingRequest, x_token: Optional[str] = Header(None)):
             if not are_non_consecutive(existing, start, end):
                 raise HTTPException(status_code=400, detail="Lezioni non possono essere consecutive nello stesso giorno")
 
-    b = Booking(date=date_str, start=start, end=end, student_id=target_student_id, status="active", created_by="admin" if is_admin else "student", created_at=datetime.now(timezone.utc), notes=req.notes)
-    bid = create_document("booking", b)
+    # Validate and set guide type
+    guide_type = (req.guide_type or "standard").upper() if req.guide_type in ["A","B","C"] else (req.guide_type or "standard")
+    if guide_type not in ["standard", "A", "B", "C"]:
+        guide_type = "standard"
 
-    # Notify instructors 1h before handled by background (not implemented with scheduler here)
+    b = Booking(date=date_str, start=start, end=end, student_id=target_student_id, status="active", created_by="admin" if is_admin else "student", created_at=datetime.now(timezone.utc), notes=req.notes, guide_type=guide_type)
+    bid = create_document("booking", b)
 
     return {"id": bid}
 
